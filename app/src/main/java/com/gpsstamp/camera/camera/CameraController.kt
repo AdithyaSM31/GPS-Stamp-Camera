@@ -50,6 +50,7 @@ class CameraController(context: Context) {
         .build()
 
     private var camera: Camera? = null
+    private var requestedZoom = 1f
 
     private val _zoomRange = MutableStateFlow(1f..1f)
     val zoomRange: StateFlow<ClosedFloatingPointRange<Float>> = _zoomRange.asStateFlow()
@@ -78,6 +79,7 @@ class CameraController(context: Context) {
             camera = try {
                 provider.bindToLifecycle(owner, selector, preview, imageCapture).also { bound ->
                     bound.cameraInfo.zoomState.observe(owner) { _zoomRange.value = it.minZoomRatio..it.maxZoomRatio }
+                    bound.cameraControl.setZoomRatio(requestedZoom)
                 }
             } catch (e: IllegalArgumentException) {
                 null
@@ -91,7 +93,9 @@ class CameraController(context: Context) {
         camera = null
     }
 
+    /** Applied now if bound, and again after the next bind (CameraX reopens at 1x). */
     fun setZoom(ratio: Float) {
+        requestedZoom = ratio
         camera?.cameraControl?.setZoomRatio(ratio)
     }
 

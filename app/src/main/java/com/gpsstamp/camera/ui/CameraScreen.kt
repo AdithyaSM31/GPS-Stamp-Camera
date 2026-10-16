@@ -9,6 +9,9 @@ import android.provider.Settings
 import android.util.Size
 import android.view.OrientationEventListener
 import android.view.Surface
+import android.view.SurfaceHolder
+import android.view.SurfaceView
+import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.core.animateFloatAsState
@@ -56,6 +59,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -82,6 +86,7 @@ import com.gpsstamp.camera.R
 import com.gpsstamp.camera.capture.CaptureStatus
 import com.gpsstamp.camera.stamp.StampData
 import com.gpsstamp.camera.stamp.StampRenderer
+import com.gpsstamp.camera.ultrawide.Size2
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -108,7 +113,10 @@ fun CameraScreen(onOpenGallery: () -> Unit, vm: CameraViewModel = viewModel()) {
     var editingNote by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { vm.refreshLastPhoto() }
-    LaunchedEffect(ui.lensFacing) { vm.camera.bind(lifecycleOwner, previewView, ui.lensFacing) }
+    // CameraX and the hidden ultra-wide never run together: CameraX binds only outside ultra-wide mode.
+    LaunchedEffect(ui.lensFacing, ui.ultraWideActive) {
+        if (!ui.ultraWideActive) vm.camera.bind(lifecycleOwner, previewView, ui.lensFacing)
+    }
     LaunchedEffect(ui.error) {
         ui.error?.let {
             snackbar.showSnackbar(it)
@@ -149,6 +157,7 @@ fun CameraScreen(onOpenGallery: () -> Unit, vm: CameraViewModel = viewModel()) {
         ) {
             TopBar(
                 flashMode = ui.flashMode,
+                flashEnabled = !(ui.ultraWideActive && ui.hiddenWide?.hasFlash == false),
                 showSwitch = canSwitchLens,
                 iconAngle = iconAngle,
                 onFlash = vm::cycleFlash,
@@ -158,7 +167,12 @@ fun CameraScreen(onOpenGallery: () -> Unit, vm: CameraViewModel = viewModel()) {
             // Takes all spare height; the 3:4 preview (same shape as the photo) is centred inside it.
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 BoxWithConstraints(Modifier.aspectRatio(3f / 4f)) {
-                    AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+                    val wide = ui.hiddenWide
+                    if (ui.ultraWideActive && wide != null) {
+                        UltraWidePreview(wide.previewSize, vm::onUltraWideSurface)
+                    } else {
+                        AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+                    }
                     // An upright frame the shape of the photo as the user sees it, rotated to face them: the stamp
                     // sits on its bottom edge (the edge facing the ground) at the saved photo's proportions.
                     val landscape = OverlayRotation.isLandscape(rotation)
@@ -178,10 +192,12 @@ fun CameraScreen(onOpenGallery: () -> Unit, vm: CameraViewModel = viewModel()) {
             }
             ZoomChips(
                 zoom = ui.zoom,
-                wideRatio = ZoomOptions.wideRatio(zoomRange.start),
+                // Phones that expose the ultra-wide as zoom < 1 use that; others may have a hidden ultra-wide lens.
+                wideRatio = ZoomOptions.wideRatio(zoomRange.start)
+                    ?: ui.hiddenWide?.zoomRatio?.takeIf { ui.lensFacing == CameraSelector.LENS_FACING_BACK },
                 showTele = zoomRange.endInclusive >= 2f,
                 iconAngle = iconAngle,
-                onZoom = vm::setZoom,
+                onZoom = vm::selectZoom,
             )
             BottomBar(
                 lastPhotoUri = ui.lastPhotoUri,
@@ -210,6 +226,7 @@ fun CameraScreen(onOpenGallery: () -> Unit, vm: CameraViewModel = viewModel()) {
 @Composable
 private fun TopBar(
     flashMode: Int,
+    flashEnabled: Boolean,
     showSwitch: Boolean,
     iconAngle: Float,
     onFlash: () -> Unit,
@@ -227,7 +244,9 @@ private fun TopBar(
             else -> Icons.Filled.FlashOff
         }
         val iconModifier = Modifier.rotate(iconAngle)
-        IconButton(onClick = onFlash) { Icon(flashIcon, stringResource(R.string.cd_flash), iconModifier, tint = Color.White) }
+        IconButton(onClick = onFlash, enabled = flashEnabled) {
+            Icon(flashIcon, stringResource(R.string.cd_flash), iconModifier, tint = if (flashEnabled) Color.White else Color.Gray)
+        }
         if (showSwitch) {
             IconButton(onClick = onSwitch) {
                 Icon(Icons.Filled.Cameraswitch, stringResource(R.string.cd_switch_camera), iconModifier, tint = Color.White)
@@ -356,3 +375,39 @@ private fun loadThumbnail(context: Context, uri: Uri): ImageBitmap? =
             BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = 16 })?.asImageBitmap()
         }
     }
+
+/**
+ * Preview for the hidden ultra-wide (plain Camera2, not CameraX). The buffer is fixed to the camera's landscape
+ * preview size; Camera2 rotates it to match the sensor, so it shows upright in the portrait-locked screen.
+ */
+@Composable
+private fun UltraWidePreview(size: Size2, onSurface: (Surface?) -> Unit) {
+    val latestOnSurface by rememberUpdatedState(onSurface)
+    AndroidView(
+        factory = { context ->
+            SurfaceView(context).apply {
+                holder.addCallback(object : SurfaceHolder.Callback {
+                    private var delivered = false
+
+                    override fun surfaceCreated(holder: SurfaceHolder) {
+                        delivered = false
+                        holder.setFixedSize(size.width, size.height)
+                    }
+
+                    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                        if (!delivered && width == size.width && height == size.height) {
+                            delivered = true
+                            latestOnSurface(holder.surface)
+                        }
+                    }
+
+                    override fun surfaceDestroyed(holder: SurfaceHolder) {
+                        delivered = false
+                        latestOnSurface(null)
+                    }
+                })
+            }
+        },
+        modifier = Modifier.fillMaxSize(),
+    )
+}

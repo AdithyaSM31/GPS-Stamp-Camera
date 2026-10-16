@@ -4,6 +4,7 @@ import android.app.Application
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.SystemClock
+import android.view.Surface
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.lifecycle.AndroidViewModel
@@ -14,6 +15,7 @@ import com.gpsstamp.camera.camera.CameraController
 import com.gpsstamp.camera.capture.CaptureRules
 import com.gpsstamp.camera.capture.CaptureStatus
 import com.gpsstamp.camera.capture.PhotoSaver
+import com.gpsstamp.camera.capture.rotatedUpright
 import com.gpsstamp.camera.gallery.PhotoRepository
 import com.gpsstamp.camera.geo.AddressResolver
 import com.gpsstamp.camera.geo.Located
@@ -23,7 +25,12 @@ import com.gpsstamp.camera.location.LocationState
 import com.gpsstamp.camera.map.OsmMapRenderer
 import com.gpsstamp.camera.settings.SettingsStore
 import com.gpsstamp.camera.stamp.StampData
+import com.gpsstamp.camera.ultrawide.CaptureRotation
+import com.gpsstamp.camera.ultrawide.HiddenUltraWide
+import com.gpsstamp.camera.ultrawide.UltraWideProbe
+import com.gpsstamp.camera.ultrawide.UltraWideSession
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +40,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.time.ZoneId
 
@@ -50,6 +58,10 @@ data class CameraUiState(
     val zoom: Float = 1f,
     val lastPhotoUri: Uri? = null,
     val error: String? = null,
+    /** An ultra-wide the phone hides from CameraX but lets the app open (null when there is none). */
+    val hiddenWide: HiddenUltraWide? = null,
+    /** True while the preview and shutter use [hiddenWide] instead of CameraX. */
+    val ultraWideActive: Boolean = false,
 ) {
     val canCapture get() = CaptureRules.canCapture(status, capturing)
 }
@@ -75,6 +87,9 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
     private var place: Located<Place>? = null
     private var enrichJob: Job? = null
     private var trackingJob: Job? = null
+    private val ultraWideProbe = UltraWideProbe(app)
+    private var probed = false
+    private var ultraSession: UltraWideSession? = null
 
     init {
         viewModelScope.launch { _ui.update { it.copy(lensFacing = settings.lensFacing.first()) } }
@@ -88,6 +103,13 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Starts GPS while the screen is visible; requires camera and location permission. */
     fun onStart() {
+        if (!probed) {
+            probed = true
+            viewModelScope.launch {
+                val found = ultraWideProbe.find()
+                _ui.update { it.copy(hiddenWide = found) }
+            }
+        }
         if (trackingJob?.isActive == true) return
         trackingJob = viewModelScope.launch {
             launch {
@@ -106,6 +128,7 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Stops GPS in the background; the next fix after returning must be fresh before the shutter enables. */
     fun onStop() {
+        leaveUltraWide()
         trackingJob?.cancel()
         trackingJob = null
         location = LocationState.Searching(null)
@@ -156,11 +179,18 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
         if (!state.canCapture) return
         val fix = location as? LocationState.Fix ?: return
         val snapshot = state.preview?.copy(timeMs = fix.timeAt(SystemClock.elapsedRealtime())) ?: return
+        val wide = state.hiddenWide.takeIf { state.ultraWideActive }
         _ui.update { it.copy(capturing = true) }
         viewModelScope.launch {
             try {
-                val image = camera.takePicture()
-                val uri = saver.save(image, snapshot)
+                val uri = if (wide != null) {
+                    val session = ultraSession ?: throw IllegalStateException("Ultra-wide camera isn't open")
+                    val raw = session.capture()
+                    val degrees = CaptureRotation.degrees(wide.sensorOrientation, camera.targetRotation)
+                    saver.save(withContext(Dispatchers.Default) { raw.rotatedUpright(degrees) }, snapshot)
+                } else {
+                    saver.save(camera.takePicture(), snapshot)
+                }
                 _ui.update { it.copy(lastPhotoUri = uri) }
             } catch (e: CancellationException) {
                 throw e
@@ -186,9 +216,11 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggleLens() {
+        leaveUltraWide()
         val next =
             if (_ui.value.lensFacing == CameraSelector.LENS_FACING_BACK) CameraSelector.LENS_FACING_FRONT
             else CameraSelector.LENS_FACING_BACK
+        camera.setZoom(1f)
         _ui.update { it.copy(lensFacing = next, zoom = 1f) }
         viewModelScope.launch { settings.setLensFacing(next) }
     }
@@ -200,12 +232,66 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
             else -> ImageCapture.FLASH_MODE_OFF
         }
         camera.setFlash(next)
+        ultraSession?.setFlash(next)
         _ui.update { it.copy(flashMode = next) }
     }
 
-    fun setZoom(ratio: Float) {
+    /**
+     * Zoom chip tapped. The hidden ultra-wide's ratio switches the preview to that lens (CameraX is released
+     * and the screen hands over a surface); any other ratio returns to CameraX at that zoom.
+     */
+    fun selectZoom(ratio: Float) {
+        val state = _ui.value
+        val wide = state.hiddenWide
+        if (wide != null && ratio == wide.zoomRatio && state.lensFacing == CameraSelector.LENS_FACING_BACK) {
+            if (!state.ultraWideActive) {
+                camera.unbind()
+                _ui.update { it.copy(ultraWideActive = true, zoom = ratio) }
+            }
+            return
+        }
+        leaveUltraWide()
         camera.setZoom(ratio)
         _ui.update { it.copy(zoom = ratio) }
+    }
+
+    /** The ultra-wide preview surface appeared (open the lens) or went away (close it). */
+    fun onUltraWideSurface(surface: Surface?) {
+        ultraSession?.close()
+        ultraSession = null
+        val wide = _ui.value.hiddenWide
+        if (surface == null || wide == null || !_ui.value.ultraWideActive) return
+        val session = UltraWideSession(getApplication(), wide, onLost = { viewModelScope.launch { failUltraWide() } })
+        ultraSession = session
+        session.setFlash(_ui.value.flashMode)
+        viewModelScope.launch {
+            try {
+                session.open(surface)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (ultraSession === session) failUltraWide()
+            }
+        }
+    }
+
+    private fun leaveUltraWide() {
+        ultraSession?.close()
+        ultraSession = null
+        if (_ui.value.ultraWideActive) _ui.update { it.copy(ultraWideActive = false, zoom = 1f) }
+    }
+
+    /** The phone refused or took back the hidden lens: back to 1x and no wide chip for this session. */
+    private fun failUltraWide() {
+        ultraSession?.close()
+        ultraSession = null
+        camera.setZoom(1f)
+        val message = getApplication<Application>().getString(R.string.ultra_wide_unavailable)
+        _ui.update { it.copy(hiddenWide = null, ultraWideActive = false, zoom = 1f, error = message) }
+    }
+
+    override fun onCleared() {
+        ultraSession?.close()
     }
 
     fun clearError() {

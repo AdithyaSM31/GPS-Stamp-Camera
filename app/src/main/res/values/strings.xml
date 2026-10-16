@@ -23,6 +23,7 @@
     <string name="cd_shutter">Take photo</string>
     <string name="cd_last_photo">Open gallery</string>
     <string name="cd_back">Back</string>
+    <string name="ultra_wide_unavailable">Ultra-wide isn\'t available on this phone</string>
 
     <string name="no_photos">No photos yet</string>
     <plurals name="photo_count">
