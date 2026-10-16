@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Blue-to-teal gradient with faint map roads. 108dp adaptive-icon canvas. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0"
+                android:startY="0"
+                android:endX="108"
+                android:endY="108">
+                <item android:offset="0" android:color="#FF1565C0" />
+                <item android:offset="1" android:color="#FF00897B" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Minor streets -->
+    <path
+        android:pathData="M-4,30 L112,22 M-4,96 L112,88 M90,-4 L84,112 M10,-4 L18,112"
+        android:strokeWidth="2"
+        android:strokeColor="#1FFFFFFF" />
+    <!-- Main roads -->
+    <path
+        android:pathData="M-4,74 C24,62 46,90 112,64 M28,-4 C34,30 68,48 76,112"
+        android:strokeWidth="5"
+        android:strokeColor="#2EFFFFFF"
+        android:strokeLineCap="round" />
+</vector>
