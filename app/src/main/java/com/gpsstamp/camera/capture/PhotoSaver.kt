@@ -28,9 +28,16 @@ class PhotoSaver(context: Context) {
     private val resolver = context.applicationContext.contentResolver
     private val locations = PhotoLocationStore(context)
 
-    /** Always closes [image]. */
-    suspend fun save(image: ImageProxy, data: StampData): Uri = withContext(Dispatchers.IO) {
-        val photo = image.use { it.toUprightBitmap() }
+    /** CameraX path. Always closes [image]. */
+    suspend fun save(image: ImageProxy, data: StampData): Uri {
+        val photo = withContext(Dispatchers.IO) {
+            image.use { it.toBitmap().rotatedUpright(it.imageInfo.rotationDegrees) }
+        }
+        return save(photo, data)
+    }
+
+    /** Stamps and saves an upright, mutable [photo]; takes ownership and recycles it. */
+    suspend fun save(photo: Bitmap, data: StampData): Uri = withContext(Dispatchers.IO) {
         try {
             val stamp = StampRenderer.render(data, photo.width, photo.height)
             Canvas(photo).drawBitmap(stamp, 0f, (photo.height - stamp.height).toFloat(), null)
@@ -50,18 +57,6 @@ class PhotoSaver(context: Context) {
         } finally {
             photo.recycle()
         }
-    }
-
-    /** Rotated to the true orientation and mutable. Front-camera frames are not mirrored, so text reads correctly. */
-    private fun ImageProxy.toUprightBitmap(): Bitmap {
-        val raw = toBitmap()
-        val rotation = imageInfo.rotationDegrees
-        val rotated = if (rotation == 0) raw else {
-            val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
-            Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, matrix, true).also { if (it !== raw) raw.recycle() }
-        }
-        if (rotated.isMutable) return rotated
-        return rotated.copy(Bitmap.Config.ARGB_8888, true).also { rotated.recycle() }
     }
 
     private fun insert(fileName: String, timeMs: Long): Uri {
@@ -110,4 +105,17 @@ class PhotoSaver(context: Context) {
             resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
         }
     }
+}
+
+/**
+ * This frame rotated clockwise by [degrees] to its true orientation, as a mutable bitmap; recycles the original
+ * when a new one is made. Front-camera frames are not mirrored, so stamp text reads correctly.
+ */
+fun Bitmap.rotatedUpright(degrees: Int): Bitmap {
+    val rotated = if (degrees % 360 == 0) this else {
+        val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
+        Bitmap.createBitmap(this, 0, 0, width, height, matrix, true).also { if (it !== this) recycle() }
+    }
+    if (rotated.isMutable) return rotated
+    return rotated.copy(Bitmap.Config.ARGB_8888, true).also { rotated.recycle() }
 }
