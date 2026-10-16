@@ -180,13 +180,14 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
         val fix = location as? LocationState.Fix ?: return
         val snapshot = state.preview?.copy(timeMs = fix.timeAt(SystemClock.elapsedRealtime())) ?: return
         val wide = state.hiddenWide.takeIf { state.ultraWideActive }
+        // How the phone is held at the tap (as CameraX does), not after a slow flash capture.
+        val degrees = wide?.let { CaptureRotation.degrees(it.sensorOrientation, camera.targetRotation) } ?: 0
         _ui.update { it.copy(capturing = true) }
         viewModelScope.launch {
             try {
                 val uri = if (wide != null) {
                     val session = ultraSession ?: throw IllegalStateException("Ultra-wide camera isn't open")
                     val raw = session.capture()
-                    val degrees = CaptureRotation.degrees(wide.sensorOrientation, camera.targetRotation)
                     saver.save(withContext(Dispatchers.Default) { raw.rotatedUpright(degrees) }, snapshot)
                 } else {
                     saver.save(camera.takePicture(), snapshot)
@@ -261,7 +262,12 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
         ultraSession = null
         val wide = _ui.value.hiddenWide
         if (surface == null || wide == null || !_ui.value.ultraWideActive) return
-        val session = UltraWideSession(getApplication(), wide, onLost = { viewModelScope.launch { failUltraWide() } })
+        var created: UltraWideSession? = null
+        // Only the current session may fail ultra-wide mode; a late callback from an old one is ignored.
+        val session = UltraWideSession(getApplication(), wide, onLost = {
+            viewModelScope.launch { if (ultraSession === created) failUltraWide() }
+        })
+        created = session
         ultraSession = session
         session.setFlash(_ui.value.flashMode)
         viewModelScope.launch {

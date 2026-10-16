@@ -119,7 +119,7 @@ class CameraController(context: Context) {
                 cont.invokeOnCancellation { mainExecutor.execute { info.cameraState.removeObserver(observer) } }
             }
         }
-        releasing = null
+        if (releasing === info) releasing = null // a newer unbind() may have replaced it
     }
 
     /** Applied now if bound, and again after the next bind (CameraX reopens at 1x). */

@@ -22,7 +22,6 @@ import android.os.HandlerThread
 import android.view.Surface
 import androidx.camera.core.ImageCapture
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.IOException
@@ -33,34 +32,33 @@ import kotlin.coroutines.resumeWithException
 private const val PRECAPTURE_TIMEOUT_MS = 1_500L
 private const val TRIGGER_TAG = "precapture-trigger"
 
-/** The hidden ultra-wide could not be opened or was lost (another app took it, the phone refused, ...). */
+/** The hidden ultra-wide could not be opened, was lost (another app took it, the phone refused, ...) or closed. */
 class UltraWideUnavailable(message: String) : Exception(message)
 
 /**
  * Plain Camera2 session for a camera CameraX can't see: preview into [open]'s surface and JPEG stills. One
- * instance per open; [close] is final. [onLost] fires if the camera goes away after opening.
+ * instance per open; [close] is final and fails anything still waiting. [onLost] fires if the camera goes away
+ * after opening.
  */
 class UltraWideSession(context: Context, private val spec: HiddenUltraWide, private val onLost: () -> Unit) {
     private val manager = context.applicationContext.getSystemService(CameraManager::class.java)
     private val thread = HandlerThread("ultrawide").apply { start() }
     private val handler = Handler(thread.looper)
     private val executor = Executor { handler.post(it) }
+    private val calls = PendingCalls()
 
-    private var device: CameraDevice? = null
-    private var session: CameraCaptureSession? = null
-    private var reader: ImageReader? = null
-    private var preview: Surface? = null
-
+    @Volatile private var device: CameraDevice? = null
+    @Volatile private var session: CameraCaptureSession? = null
+    @Volatile private var reader: ImageReader? = null
+    @Volatile private var preview: Surface? = null
     @Volatile private var flashMode = ImageCapture.FLASH_MODE_OFF
-    @Volatile private var closed = false
 
     @SuppressLint("MissingPermission") // Only reachable from the camera screen, after the permission gate.
     suspend fun open(previewSurface: Surface) {
-        check(!closed) { "Ultra-wide session already closed" }
-        val camera = suspendCancellableCoroutine { cont ->
+        val camera = calls.await { cont ->
             manager.openCamera(spec.cameraId, object : CameraDevice.StateCallback() {
                 override fun onOpened(camera: CameraDevice) {
-                    if (cont.isActive && !closed) cont.resume(camera) else camera.close()
+                    if (cont.isActive) cont.resume(camera) else camera.close()
                 }
 
                 override fun onDisconnected(camera: CameraDevice) = lost(camera, "disconnected")
@@ -68,20 +66,30 @@ class UltraWideSession(context: Context, private val spec: HiddenUltraWide, priv
 
                 private fun lost(camera: CameraDevice, why: String) {
                     camera.close()
-                    if (cont.isActive) cont.resumeWithException(UltraWideUnavailable(why)) else if (!closed) onLost()
+                    if (cont.isActive) cont.resumeWithException(UltraWideUnavailable(why))
+                    else if (!calls.isClosed) onLost()
                 }
             }, handler)
         }
+        // close() may have run while this coroutine waited to resume; it couldn't see this camera yet.
         device = camera
+        if (calls.isClosed) {
+            camera.close()
+            throw UltraWideUnavailable("Ultra-wide camera closed")
+        }
         preview = previewSurface
         val imageReader = ImageReader.newInstance(spec.jpegSize.width, spec.jpegSize.height, ImageFormat.JPEG, 2)
         reader = imageReader
 
-        session = suspendCancellableCoroutine { cont ->
+        session = calls.await { cont ->
             val callback = object : CameraCaptureSession.StateCallback() {
-                override fun onConfigured(s: CameraCaptureSession) = cont.resume(s)
-                override fun onConfigureFailed(s: CameraCaptureSession) =
-                    cont.resumeWithException(UltraWideUnavailable("session configuration failed"))
+                override fun onConfigured(s: CameraCaptureSession) {
+                    if (cont.isActive) cont.resume(s) else s.close()
+                }
+
+                override fun onConfigureFailed(s: CameraCaptureSession) {
+                    if (cont.isActive) cont.resumeWithException(UltraWideUnavailable("session configuration failed"))
+                }
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 val outputs = listOf(OutputConfiguration(previewSurface), OutputConfiguration(imageReader.surface))
@@ -101,21 +109,26 @@ class UltraWideSession(context: Context, private val spec: HiddenUltraWide, priv
         handler.post { runCatching { startPreview() } }
     }
 
-    /** Decoded JPEG, mutable, in sensor orientation (not rotated). */
+    /** Decoded JPEG, mutable, in sensor orientation (not rotated). Fails if the session closes meanwhile. */
     suspend fun capture(): Bitmap {
         val s = session ?: throw IllegalStateException("Ultra-wide camera isn't open")
         val r = reader ?: throw IllegalStateException("Ultra-wide camera isn't open")
         if (spec.hasFlash && flashMode != ImageCapture.FLASH_MODE_OFF) precapture(s)
 
-        val bytes = suspendCancellableCoroutine { cont ->
+        val bytes = calls.await { cont ->
             r.setOnImageAvailableListener({ source ->
-                val image = source.acquireNextImage() ?: return@setOnImageAvailableListener
                 try {
-                    val buffer = image.planes[0].buffer
-                    val data = ByteArray(buffer.remaining()).also { buffer.get(it) }
-                    if (cont.isActive) cont.resume(data)
-                } finally {
-                    image.close()
+                    val image = source.acquireNextImage() ?: return@setOnImageAvailableListener
+                    try {
+                        val buffer = image.planes[0].buffer
+                        val data = ByteArray(buffer.remaining()).also { buffer.get(it) }
+                        if (cont.isActive) cont.resume(data)
+                    } finally {
+                        image.close()
+                    }
+                } catch (e: IllegalStateException) {
+                    // The reader was closed under us; close() has failed (or will fail) the waiter.
+                    if (cont.isActive) cont.resumeWithException(UltraWideUnavailable("Ultra-wide camera closed"))
                 }
             }, handler)
             val request = requestBuilder(CameraDevice.TEMPLATE_STILL_CAPTURE, r.surface).build()
@@ -131,17 +144,24 @@ class UltraWideSession(context: Context, private val spec: HiddenUltraWide, priv
         }
     }
 
-    /** Idempotent; the session can't be reopened. */
+    /**
+     * Final and idempotent. Fails any waiting open/capture first, disconnects the camera right away (so CameraX
+     * can reopen camera 0 straight after), and closes the reader on the camera thread so it can't race the
+     * image listener.
+     */
     fun close() {
-        if (closed) return
-        closed = true
+        if (calls.isClosed) return
+        calls.close()
         runCatching { session?.close() }
         runCatching { device?.close() }
-        runCatching { reader?.close() }
+        val imageReader = reader
         session = null
         device = null
         reader = null
-        thread.quitSafely()
+        handler.post {
+            runCatching { imageReader?.close() }
+            thread.quitSafely()
+        }
     }
 
     private fun startPreview() {
@@ -171,7 +191,7 @@ class UltraWideSession(context: Context, private val spec: HiddenUltraWide, priv
     private suspend fun precapture(s: CameraCaptureSession) {
         val surface = preview ?: return
         withTimeoutOrNull(PRECAPTURE_TIMEOUT_MS) {
-            suspendCancellableCoroutine { cont ->
+            calls.await<Unit> { cont ->
                 var triggered = false
                 val watcher = object : CameraCaptureSession.CaptureCallback() {
                     override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
@@ -193,6 +213,6 @@ class UltraWideSession(context: Context, private val spec: HiddenUltraWide, priv
                 s.capture(trigger.build(), watcher, handler)
             }
         }
-        startPreview()
+        if (!calls.isClosed) startPreview()
     }
 }
