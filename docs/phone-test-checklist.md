@@ -33,3 +33,25 @@ Install `app/build/outputs/apk/debug/app-debug.apk` on an Android 8+ phone
       red "Fake GPS detected" banner, shutter disabled.
 - [ ] Turn Location off: "Location is off" with an Open settings button.
 - [ ] Airplane mode: photo still saves; title becomes coordinates, no map box.
+
+## Rotation (v2)
+- [ ] Hold the phone sideways (both ways) and upside down: the preview stamp and
+      "Waiting for GPS…" banner turn to read upright, on the edge facing the ground.
+- [ ] Shoot in each orientation: the saved photo matches the preview (landscape photo,
+      stamp along its long bottom edge).
+- [ ] Flash, switch-camera, note icons, zoom labels and the gallery thumbnail turn in place.
+- [ ] Tilting near 45° doesn't make the stamp flicker; lying flat keeps the last orientation.
+
+## Gallery (v2)
+- [ ] The thumbnail shows your newest photo right after opening the app.
+- [ ] Tap it: grid of this app's photos, newest first, with a count. Back returns to the camera.
+- [ ] While in the gallery, the camera is off (no camera-in-use indicator).
+- [ ] Tap a photo: full screen. Swipe left/right; pinch to zoom and pan; double-tap toggles zoom.
+      While zoomed, swiping pans instead of changing photo.
+- [ ] First time in the viewer, Android asks about photo location. Allow it: "Open in Maps"
+      appears and opens Google Maps at the spot. Deny it: the button is hidden, nothing crashes.
+- [ ] Share opens the share sheet; sending to WhatsApp/Drive works.
+- [ ] Delete asks "Delete this photo?"; confirming removes it from the grid and from the phone's
+      Gallery app. Deleting the last photo returns to an empty grid ("No photos yet").
+- [ ] New launcher icon: white pin with a camera lens on a blue-teal background
+      (with Android 13+ themed icons on, a single-colour pin).
