@@ -85,6 +85,12 @@ class CameraController(context: Context) {
         }, mainExecutor)
     }
 
+    /** Releases the camera, e.g. while the gallery is open; [bind] reacquires it. */
+    fun unbind() {
+        if (providerFuture.isDone) providerFuture.get().unbindAll()
+        camera = null
+    }
+
     fun setZoom(ratio: Float) {
         camera?.cameraControl?.setZoomRatio(ratio)
     }

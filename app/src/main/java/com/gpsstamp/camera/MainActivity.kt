@@ -15,7 +15,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
-                PermissionGate { CameraScreen() }
+                PermissionGate { CameraScreen(onOpenGallery = {}) }
             }
         }
     }

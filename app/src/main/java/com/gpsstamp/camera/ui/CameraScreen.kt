@@ -1,6 +1,5 @@
 package com.gpsstamp.camera.ui
 
-import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
@@ -12,6 +11,8 @@ import android.view.OrientationEventListener
 import android.view.Surface
 import androidx.camera.core.ImageCapture
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -49,6 +51,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -57,6 +61,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -84,7 +90,7 @@ private val Scrim = Color(0x99000000)
 private val Danger = Color(0xE6C62828)
 
 @Composable
-fun CameraScreen(vm: CameraViewModel = viewModel()) {
+fun CameraScreen(onOpenGallery: () -> Unit, vm: CameraViewModel = viewModel()) {
     // GPS runs only while the screen is visible: saves battery and forces a fresh fix after returning.
     LifecycleStartEffect(vm) {
         vm.onStart()
@@ -108,24 +114,30 @@ fun CameraScreen(vm: CameraViewModel = viewModel()) {
             vm.clearError()
         }
     }
-    // The UI is locked to portrait; tell CameraX how the phone is really held so landscape shots save upright.
+    // Leaving for the gallery must release the camera, not keep it running behind another screen.
+    DisposableEffect(Unit) { onDispose { vm.camera.unbind() } }
+
+    // The UI is locked to portrait; track how the phone is really held so landscape shots save upright
+    // and the preview stamp and icons turn to match.
+    var rotation by remember { mutableIntStateOf(Surface.ROTATION_0) }
     DisposableEffect(Unit) {
         val listener = object : OrientationEventListener(context) {
             override fun onOrientationChanged(degrees: Int) {
-                if (degrees == ORIENTATION_UNKNOWN) return
-                vm.camera.setTargetRotation(
-                    when (degrees) {
-                        in 45..134 -> Surface.ROTATION_270
-                        in 135..224 -> Surface.ROTATION_180
-                        in 225..314 -> Surface.ROTATION_90
-                        else -> Surface.ROTATION_0
-                    }
-                )
+                val next = OrientationTracker.next(degrees, rotation)
+                if (next != rotation) {
+                    rotation = next
+                    vm.camera.setTargetRotation(next)
+                }
             }
         }
         listener.enable()
         onDispose { listener.disable() }
     }
+    var iconTarget by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(rotation) {
+        iconTarget = OverlayRotation.nearestEquivalent(OverlayRotation.degreesFor(rotation), iconTarget)
+    }
+    val iconAngle by animateFloatAsState(iconTarget, tween(200), label = "iconAngle")
 
     Scaffold(containerColor = Color.Black, snackbarHost = { SnackbarHost(snackbar) }) { padding ->
         Column(
@@ -135,29 +147,46 @@ fun CameraScreen(vm: CameraViewModel = viewModel()) {
             TopBar(
                 flashMode = ui.flashMode,
                 showSwitch = canSwitchLens,
+                iconAngle = iconAngle,
                 onFlash = vm::cycleFlash,
                 onSwitch = vm::toggleLens,
                 onNote = { editingNote = true },
             )
             // Takes all spare height; the 3:4 preview (same shape as the photo) is centred inside it.
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Box(Modifier.aspectRatio(3f / 4f)) {
+                BoxWithConstraints(Modifier.aspectRatio(3f / 4f)) {
                     AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
-                    StampOverlay(ui.preview, Modifier.align(Alignment.BottomCenter).fillMaxWidth())
-                    StatusBanner(ui.status, context, Modifier.align(Alignment.TopCenter).padding(12.dp))
+                    // An upright frame the shape of the photo as the user sees it, rotated to face them: the stamp
+                    // sits on its bottom edge (the edge facing the ground) at the saved photo's proportions.
+                    val landscape = OverlayRotation.isLandscape(rotation)
+                    Box(
+                        Modifier
+                            .align(Alignment.Center)
+                            .requiredSize(
+                                width = if (landscape) maxHeight else maxWidth,
+                                height = if (landscape) maxWidth else maxHeight,
+                            )
+                            .graphicsLayer { rotationZ = OverlayRotation.degreesFor(rotation) }
+                    ) {
+                        StampOverlay(ui.preview, Modifier.align(Alignment.BottomCenter).fillMaxWidth())
+                        StatusBanner(ui.status, context, Modifier.align(Alignment.TopCenter).padding(12.dp))
+                    }
                 }
             }
             ZoomChips(
                 zoom = ui.zoom,
                 showWide = zoomRange.start <= 0.6f,
                 showTele = zoomRange.endInclusive >= 2f,
+                iconAngle = iconAngle,
                 onZoom = vm::setZoom,
             )
             BottomBar(
                 lastPhotoUri = ui.lastPhotoUri,
                 enabled = ui.canCapture,
                 capturing = ui.capturing,
+                iconAngle = iconAngle,
                 onShutter = vm::capture,
+                onOpenGallery = onOpenGallery,
                 context = context,
             )
         }
@@ -176,7 +205,14 @@ fun CameraScreen(vm: CameraViewModel = viewModel()) {
 }
 
 @Composable
-private fun TopBar(flashMode: Int, showSwitch: Boolean, onFlash: () -> Unit, onSwitch: () -> Unit, onNote: () -> Unit) {
+private fun TopBar(
+    flashMode: Int,
+    showSwitch: Boolean,
+    iconAngle: Float,
+    onFlash: () -> Unit,
+    onSwitch: () -> Unit,
+    onNote: () -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().height(56.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -187,13 +223,16 @@ private fun TopBar(flashMode: Int, showSwitch: Boolean, onFlash: () -> Unit, onS
             ImageCapture.FLASH_MODE_ON -> Icons.Filled.FlashOn
             else -> Icons.Filled.FlashOff
         }
-        IconButton(onClick = onFlash) { Icon(flashIcon, stringResource(R.string.cd_flash), tint = Color.White) }
+        val iconModifier = Modifier.rotate(iconAngle)
+        IconButton(onClick = onFlash) { Icon(flashIcon, stringResource(R.string.cd_flash), iconModifier, tint = Color.White) }
         if (showSwitch) {
             IconButton(onClick = onSwitch) {
-                Icon(Icons.Filled.Cameraswitch, stringResource(R.string.cd_switch_camera), tint = Color.White)
+                Icon(Icons.Filled.Cameraswitch, stringResource(R.string.cd_switch_camera), iconModifier, tint = Color.White)
             }
         }
-        IconButton(onClick = onNote) { Icon(Icons.Filled.EditNote, stringResource(R.string.cd_edit_note), tint = Color.White) }
+        IconButton(onClick = onNote) {
+            Icon(Icons.Filled.EditNote, stringResource(R.string.cd_edit_note), iconModifier, tint = Color.White)
+        }
     }
 }
 
@@ -231,7 +270,7 @@ private fun StatusBanner(status: CaptureStatus, context: Context, modifier: Modi
 }
 
 @Composable
-private fun ZoomChips(zoom: Float, showWide: Boolean, showTele: Boolean, onZoom: (Float) -> Unit) {
+private fun ZoomChips(zoom: Float, showWide: Boolean, showTele: Boolean, iconAngle: Float, onZoom: (Float) -> Unit) {
     val options = listOfNotNull(0.6f.takeIf { showWide }, 1f, 2f.takeIf { showTele })
     Row(Modifier.padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         for (option in options) {
@@ -249,6 +288,7 @@ private fun ZoomChips(zoom: Float, showWide: Boolean, showTele: Boolean, onZoom:
                     color = if (selected) Color.Black else Color.White,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
+                    modifier = Modifier.rotate(iconAngle),
                 )
             }
         }
@@ -256,13 +296,21 @@ private fun ZoomChips(zoom: Float, showWide: Boolean, showTele: Boolean, onZoom:
 }
 
 @Composable
-private fun BottomBar(lastPhotoUri: Uri?, enabled: Boolean, capturing: Boolean, onShutter: () -> Unit, context: Context) {
+private fun BottomBar(
+    lastPhotoUri: Uri?,
+    enabled: Boolean,
+    capturing: Boolean,
+    iconAngle: Float,
+    onShutter: () -> Unit,
+    onOpenGallery: () -> Unit,
+    context: Context,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        LastPhoto(lastPhotoUri, context)
+        LastPhoto(lastPhotoUri, context, iconAngle, onOpenGallery)
         Box(
             modifier = Modifier
                 .size(76.dp)
@@ -280,18 +328,17 @@ private fun BottomBar(lastPhotoUri: Uri?, enabled: Boolean, capturing: Boolean, 
 }
 
 @Composable
-private fun LastPhoto(uri: Uri?, context: Context) {
+private fun LastPhoto(uri: Uri?, context: Context, iconAngle: Float, onOpenGallery: () -> Unit) {
     val thumbnail by produceState<ImageBitmap?>(null, uri) {
         value = uri?.let { withContext(Dispatchers.IO) { runCatching { loadThumbnail(context, it) }.getOrNull() } }
     }
     Box(
         modifier = Modifier
             .size(56.dp)
+            .rotate(iconAngle)
             .clip(RoundedCornerShape(10.dp))
             .background(Scrim)
-            .clickable(enabled = uri != null, role = Role.Button, onClickLabel = stringResource(R.string.cd_last_photo)) {
-                uri?.let { openPhoto(context, it) }
-            },
+            .clickable(role = Role.Button, onClickLabel = stringResource(R.string.cd_last_photo)) { onOpenGallery() },
     ) {
         thumbnail?.let { Image(it, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
     }
@@ -305,14 +352,3 @@ private fun loadThumbnail(context: Context, uri: Uri): ImageBitmap? =
             BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = 16 })?.asImageBitmap()
         }
     }
-
-private fun openPhoto(context: Context, uri: Uri) {
-    val intent = Intent(Intent.ACTION_VIEW)
-        .setDataAndType(uri, "image/jpeg")
-        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    try {
-        context.startActivity(intent)
-    } catch (e: ActivityNotFoundException) {
-        // No gallery app installed; the photo is still saved.
-    }
-}
