@@ -3,14 +3,14 @@ package com.gpsstamp.camera.ui
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
+import android.graphics.SurfaceTexture
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.util.Size
 import android.view.OrientationEventListener
 import android.view.Surface
-import android.view.SurfaceHolder
-import android.view.SurfaceView
+import android.view.TextureView
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.view.PreviewView
@@ -377,35 +377,35 @@ private fun loadThumbnail(context: Context, uri: Uri): ImageBitmap? =
     }
 
 /**
- * Preview for the hidden ultra-wide (plain Camera2, not CameraX). The buffer is fixed to the camera's landscape
- * preview size; Camera2 rotates it to match the sensor, so it shows upright in the portrait-locked screen.
+ * Preview for the hidden ultra-wide (plain Camera2, not CameraX). A TextureView, not a SurfaceView: the camera
+ * writes landscape buffers with a 90° transform, and SurfaceView sometimes scaled them as if unrotated (squeezed
+ * into 75% of the width after a quick 1x → 0.6x switch). TextureView applies the transform itself, every time.
  */
 @Composable
 private fun UltraWidePreview(size: Size2, onSurface: (Surface?) -> Unit) {
     val latestOnSurface by rememberUpdatedState(onSurface)
     AndroidView(
         factory = { context ->
-            SurfaceView(context).apply {
-                holder.addCallback(object : SurfaceHolder.Callback {
-                    private var delivered = false
+            TextureView(context).apply {
+                surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                    private var surface: Surface? = null
 
-                    override fun surfaceCreated(holder: SurfaceHolder) {
-                        delivered = false
-                        holder.setFixedSize(size.width, size.height)
+                    override fun onSurfaceTextureAvailable(texture: SurfaceTexture, width: Int, height: Int) {
+                        texture.setDefaultBufferSize(size.width, size.height)
+                        surface = Surface(texture).also { latestOnSurface(it) }
                     }
 
-                    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-                        if (!delivered && width == size.width && height == size.height) {
-                            delivered = true
-                            latestOnSurface(holder.surface)
-                        }
+                    override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, width: Int, height: Int) = Unit
+
+                    override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {
+                        latestOnSurface(null) // closes the camera before the surface goes away
+                        surface?.release()
+                        surface = null
+                        return true
                     }
 
-                    override fun surfaceDestroyed(holder: SurfaceHolder) {
-                        delivered = false
-                        latestOnSurface(null)
-                    }
-                })
+                    override fun onSurfaceTextureUpdated(texture: SurfaceTexture) = Unit
+                }
             }
         },
         modifier = Modifier.fillMaxSize(),

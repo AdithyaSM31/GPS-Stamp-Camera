@@ -2,10 +2,10 @@ package com.gpsstamp.camera.ultrawide
 
 import android.content.Context
 import android.graphics.ImageFormat
+import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CameraMetadata
-import android.view.SurfaceHolder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -46,7 +46,7 @@ class UltraWideProbe(context: Context) {
             sensorWidthMm = c.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)?.width ?: 0f,
             sensorOrientation = c.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90,
             jpegSizes = map?.getOutputSizes(ImageFormat.JPEG).orEmpty().map { Size2(it.width, it.height) },
-            previewSizes = map?.getOutputSizes(SurfaceHolder::class.java).orEmpty().map { Size2(it.width, it.height) },
+            previewSizes = map?.getOutputSizes(SurfaceTexture::class.java).orEmpty().map { Size2(it.width, it.height) },
             hasFlash = c.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true,
             hasContinuousAf = c.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES)
                 ?.contains(CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_PICTURE) == true,

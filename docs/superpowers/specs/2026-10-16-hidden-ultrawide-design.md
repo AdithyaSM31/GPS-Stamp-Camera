@@ -53,17 +53,18 @@ Run once per app start, off the main thread, after camera permission is granted.
    (mainSensorWidth / mainFocal) / (wideSensorWidth / wideFocal)`. Keep candidates ≤ 0.9 and pick the
    smallest ratio. Result: `HiddenUltraWide(cameraId, zoomRatio, sensorOrientation, jpegSize, previewSize,
    hasFlash, hasContinuousAf)`, or none.
-   - `jpegSize`: the largest 4:3 JPEG size ≤ 4032×3024.
-   - `previewSize`: the largest 4:3 `SurfaceHolder` size ≤ 1440×1080.
+   - `jpegSize`: the largest 4:3 JPEG size ≤ 4096×3072 (≈12.5 MP, the same memory as the main camera's 4032×3024 cap).
+   - `previewSize`: the largest 4:3 `SurfaceTexture` size ≤ 1440×1080.
 4. The probe does **not** open the camera. Opening is checked the first time the user taps the button
    (see Errors).
 
 ## Ultra-wide session — `UltraWideSession`
 
-- **Preview:** a `SurfaceView` in the same 3:4 preview box, buffer fixed to `previewSize` (landscape sensor
-  size, so the system's automatic sensor-orientation transform shows it upright in the portrait-locked
-  UI). Repeating request on `TEMPLATE_PREVIEW` with `CONTROL_AF_MODE_CONTINUOUS_PICTURE` when available,
-  else AF off.
+- **Preview:** a `TextureView` in the same 3:4 preview box, with its SurfaceTexture's default buffer size set to
+  `previewSize` (landscape). TextureView applies the camera's 90° buffer transform itself, so the preview is
+  upright in the portrait-locked UI. (A `SurfaceView` was tried first; on the device it sometimes scaled the
+  buffer as if unrotated after a quick 1x → 0.6x switch, squeezing it into 75% of the width.) Repeating request
+  on `TEMPLATE_PREVIEW` with `CONTROL_AF_MODE_CONTINUOUS_PICTURE` when available, else AF off.
 - **Capture:** an `ImageReader` (JPEG, `jpegSize`, maxImages 2) and a `TEMPLATE_STILL_CAPTURE` request on
   the same session. No `JPEG_ORIENTATION` is set. The JPEG bytes are decoded, then rotated by the pure
   `CaptureRotation.degrees(sensorOrientation, surfaceRotation)` = `(sensorOrientation −
