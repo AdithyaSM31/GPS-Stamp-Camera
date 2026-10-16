@@ -178,7 +178,7 @@ fun CameraScreen(onOpenGallery: () -> Unit, vm: CameraViewModel = viewModel()) {
             }
             ZoomChips(
                 zoom = ui.zoom,
-                showWide = zoomRange.start <= 0.6f,
+                wideRatio = ZoomOptions.wideRatio(zoomRange.start),
                 showTele = zoomRange.endInclusive >= 2f,
                 iconAngle = iconAngle,
                 onZoom = vm::setZoom,
@@ -239,13 +239,14 @@ private fun TopBar(
     }
 }
 
-/** Same renderer as the saved photo, drawn at the preview's width. */
+/** Same renderer as the saved photo, sized to the upright frame it sits in (portrait or landscape). */
 @Composable
 private fun StampOverlay(data: StampData?, modifier: Modifier) {
     if (data == null) return
     BoxWithConstraints(modifier) {
         val widthPx = constraints.maxWidth
-        val image = remember(data, widthPx) { StampRenderer.render(data, widthPx).asImageBitmap() }
+        val heightPx = constraints.maxHeight
+        val image = remember(data, widthPx, heightPx) { StampRenderer.render(data, widthPx, heightPx).asImageBitmap() }
         Image(image, contentDescription = null, modifier = Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
     }
 }
@@ -273,8 +274,8 @@ private fun StatusBanner(status: CaptureStatus, context: Context, modifier: Modi
 }
 
 @Composable
-private fun ZoomChips(zoom: Float, showWide: Boolean, showTele: Boolean, iconAngle: Float, onZoom: (Float) -> Unit) {
-    val options = listOfNotNull(0.6f.takeIf { showWide }, 1f, 2f.takeIf { showTele })
+private fun ZoomChips(zoom: Float, wideRatio: Float?, showTele: Boolean, iconAngle: Float, onZoom: (Float) -> Unit) {
+    val options = listOfNotNull(wideRatio, 1f, 2f.takeIf { showTele })
     Row(Modifier.padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         for (option in options) {
             val selected = zoom == option
@@ -287,7 +288,7 @@ private fun ZoomChips(zoom: Float, showWide: Boolean, showTele: Boolean, iconAng
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = if (option == 1f) "1x" else if (option == 2f) "2x" else "0.6x",
+                    text = ZoomOptions.label(option),
                     color = if (selected) Color.Black else Color.White,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,

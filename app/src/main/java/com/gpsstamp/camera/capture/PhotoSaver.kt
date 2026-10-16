@@ -32,7 +32,7 @@ class PhotoSaver(context: Context) {
     suspend fun save(image: ImageProxy, data: StampData): Uri = withContext(Dispatchers.IO) {
         val photo = image.use { it.toUprightBitmap() }
         try {
-            val stamp = StampRenderer.render(data, photo.width)
+            val stamp = StampRenderer.render(data, photo.width, photo.height)
             Canvas(photo).drawBitmap(stamp, 0f, (photo.height - stamp.height).toFloat(), null)
             stamp.recycle()
 

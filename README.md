@@ -37,14 +37,14 @@ The same GPS position and time are also written into the photo's EXIF data. Phot
 
 ### Camera and gallery
 
-- Front and back camera, 0.6× / 1× / 2× zoom (0.6× only on phones with an ultra-wide lens), flash off / auto / on.
-- Hold the phone sideways: the preview stamp and icons turn upright, and the photo is saved in landscape with the stamp along its bottom edge.
+- Front and back camera, ultra-wide (0.5× or 0.6×, matching your phone's lens) / 1× / 2× zoom, flash off / auto / on.
+- Hold the phone sideways: the preview stamp and icons turn upright, and the photo is saved in landscape with a slimmer stamp along its bottom edge, covering the same share of the photo as in portrait.
 - Built-in gallery: swipe through your stamped photos, pinch or double-tap to zoom, share them, open a photo's location in Maps, or delete it.
 - Works offline. Without internet, the stamp shows the coordinates without the map and address.
 
 ## Install
 
-1. Download `GPS-Stamp-Camera-v1.0.apk` from [Releases](https://github.com/AdithyaSM31/GPS-Stamp-Camera/releases/latest) on an Android 8.0+ phone.
+1. Download `GPS-Stamp-Camera-v1.1.apk` from [Releases](https://github.com/AdithyaSM31/GPS-Stamp-Camera/releases/latest) on an Android 8.0+ phone.
 2. Open it and allow your browser or file manager to **install unknown apps** when Android asks.
 3. On first launch, grant **Camera** and **Precise location**. "Approximate" location isn't enough to stamp photos.
 

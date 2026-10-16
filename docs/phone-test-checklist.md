@@ -55,3 +55,10 @@ Install `app/build/outputs/apk/debug/app-debug.apk` on an Android 8+ phone
       Gallery app. Deleting the last photo returns to an empty grid ("No photos yet").
 - [ ] New launcher icon: white pin with a camera lens on a blue-teal background
       (with Android 13+ themed icons on, a single-colour pin).
+
+## v1.1
+- [ ] Landscape photo: the stamp is a slim strip along the bottom (about the same share of
+      the height as in portrait), still spanning the width; the preview matches.
+- [ ] Portrait photos look exactly as before.
+- [ ] On a phone with a 0.5x ultra-wide, the wide zoom button reads "0.5x" and gives the full
+      ultra-wide view; on a 0.6x phone it reads "0.6x"; with no ultra-wide (or front camera) it's hidden.

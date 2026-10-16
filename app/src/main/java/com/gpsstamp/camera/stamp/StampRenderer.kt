@@ -13,25 +13,25 @@ import kotlin.math.ceil
 private const val BADGE_TEXT = "GPS Stamp Camera"
 private const val ADDRESS_MAX_LINES = 2
 
-/** Draws the stamp into a transparent bitmap as wide as the target image; callers place it at the image bottom. */
+/** Draws the stamp into a transparent bitmap as wide as the target image ([widthPx] x [heightPx]); callers place it at the image bottom. */
 object StampRenderer {
-    fun render(data: StampData, widthPx: Int): Bitmap {
+    fun render(data: StampData, widthPx: Int, heightPx: Int): Bitmap {
         val hasMap = data.map != null
         val text = StampFormatter.buildText(
             data.lat, data.lon, data.accuracyM, data.altitudeM, data.timeMs, data.zone, data.address, data.note
         )
-        val sizes = StampGeometryCalc.compute(widthPx, hasMap, bodyLineCount = 0)
+        val sizes = StampGeometryCalc.compute(widthPx, heightPx, hasMap, bodyLineCount = 0)
         val titlePaint = textPaint(sizes.titleSize, bold = true)
         val bodyPaint = textPaint(sizes.bodySize, bold = false)
 
-        val maxText = StampGeometryCalc.textWidth(widthPx, hasMap)
+        val maxText = StampGeometryCalc.textWidth(widthPx, heightPx, hasMap)
         val title = TextFit.ellipsize(text.title, maxText, titlePaint::measureText)
         val body = text.body.flatMapIndexed { i, line ->
             if (i == 0 && data.address != null) TextFit.wrap(line, maxText, ADDRESS_MAX_LINES, bodyPaint::measureText)
             else listOf(TextFit.ellipsize(line, maxText, bodyPaint::measureText))
         }
 
-        val g = StampGeometryCalc.compute(widthPx, hasMap, body.size)
+        val g = StampGeometryCalc.compute(widthPx, heightPx, hasMap, body.size)
         val bitmap = Bitmap.createBitmap(widthPx, ceil(g.totalHeight).toInt(), Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
