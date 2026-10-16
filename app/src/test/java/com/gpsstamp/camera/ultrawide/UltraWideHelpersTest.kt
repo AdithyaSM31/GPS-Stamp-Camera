@@ -51,7 +51,7 @@ class UltraWideSelectionTest {
         val pick = UltraWideSelection.pick(main, listOf(uw))!!
         assertEquals("2", pick.cameraId)
         assertEquals(0.603f, pick.zoomRatio, 0.005f)
-        assertEquals(Size2(4000, 3000), pick.jpegSize)
+        assertEquals(Size2(4080, 3072), pick.jpegSize) // full 12.5 MP ultra-wide, same memory as the main camera's cap
         assertEquals(Size2(1440, 1080), pick.previewSize)
     }
 

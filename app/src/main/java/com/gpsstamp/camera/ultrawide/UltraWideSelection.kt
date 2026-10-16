@@ -1,7 +1,8 @@
 package com.gpsstamp.camera.ultrawide
 
 private const val MAX_WIDE_RATIO = 0.9f
-private val JPEG_CAP = Size2(4032, 3024)
+// ~12.5 MP: the same memory as the main camera's 4032x3024 cap, and lets 4080x3072 sensors use full resolution.
+private val JPEG_CAP = Size2(4096, 3072)
 private val PREVIEW_CAP = Size2(1440, 1080)
 
 /** Picks the widest usable hidden back camera that is genuinely wider than the main one. */

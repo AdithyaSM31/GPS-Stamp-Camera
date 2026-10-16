@@ -266,6 +266,8 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
         session.setFlash(_ui.value.flashMode)
         viewModelScope.launch {
             try {
+                camera.awaitReleased()
+                if (ultraSession !== session) return@launch
                 session.open(surface)
             } catch (e: CancellationException) {
                 throw e
