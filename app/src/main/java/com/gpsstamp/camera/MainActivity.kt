@@ -3,11 +3,20 @@ package com.gpsstamp.camera
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.material3.Text
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import com.gpsstamp.camera.ui.CameraScreen
+import com.gpsstamp.camera.ui.PermissionGate
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { Text("GPS Stamp Camera") }
+        enableEdgeToEdge()
+        setContent {
+            MaterialTheme(colorScheme = darkColorScheme()) {
+                PermissionGate { CameraScreen() }
+            }
+        }
     }
 }

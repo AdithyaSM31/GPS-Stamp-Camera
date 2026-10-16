@@ -1,3 +1,25 @@
 <resources>
     <string name="app_name">GPS Stamp Camera</string>
+
+    <string name="waiting_for_gps">Waiting for GPS…</string>
+    <string name="waiting_for_gps_accuracy">Waiting for GPS… ±%1$d m</string>
+    <string name="mock_detected">Fake GPS detected – disable mock location apps</string>
+    <string name="location_off">Location is off</string>
+    <string name="open_settings">Open settings</string>
+    <string name="save_failed">Couldn\'t save photo: %1$s</string>
+
+    <string name="permissions_needed">GPS Stamp Camera needs the camera and precise location to take stamped photos.</string>
+    <string name="precise_required">Precise location is required to stamp photos.</string>
+    <string name="grant_permissions">Grant permissions</string>
+
+    <string name="note_title">Note on photo</string>
+    <string name="note_hint">e.g. Project review – Team 4</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+
+    <string name="cd_flash">Flash</string>
+    <string name="cd_switch_camera">Switch camera</string>
+    <string name="cd_edit_note">Edit note</string>
+    <string name="cd_shutter">Take photo</string>
+    <string name="cd_last_photo">Open last photo</string>
 </resources>
