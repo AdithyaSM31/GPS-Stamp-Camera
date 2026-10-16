@@ -62,3 +62,7 @@ Install `app/build/outputs/apk/debug/app-debug.apk` on an Android 8+ phone
 - [ ] Portrait photos look exactly as before.
 - [ ] On a phone with a 0.5x ultra-wide, the wide zoom button reads "0.5x" and gives the full
       ultra-wide view; on a 0.6x phone it reads "0.6x"; with no ultra-wide (or front camera) it's hidden.
+- [ ] Phone with a hidden ultra-wide (e.g. Nothing Phone (1)): a "0.6x" button appears; tapping it
+      shows a wider, upright preview. Portrait and landscape photos save upright at full size with the
+      stamp; flash auto/on fire. Switching 0.6x/1x/2x quickly, opening the gallery, pressing Home and
+      coming back all work without a frozen or black preview.

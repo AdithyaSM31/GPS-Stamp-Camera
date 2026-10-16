@@ -38,6 +38,7 @@ The same GPS position and time are also written into the photo's EXIF data. Phot
 ### Camera and gallery
 
 - Front and back camera, ultra-wide (0.5× or 0.6×, matching your phone's lens) / 1× / 2× zoom, flash off / auto / on.
+  On phones that hide the ultra-wide from other apps but still let them open it (such as the Nothing Phone (1)), the app finds the lens and uses it directly.
 - Hold the phone sideways: the preview stamp and icons turn upright, and the photo is saved in landscape with a slimmer stamp along its bottom edge, covering the same share of the photo as in portrait.
 - Built-in gallery: swipe through your stamped photos, pinch or double-tap to zoom, share them, open a photo's location in Maps, or delete it.
 - Works offline. Without internet, the stamp shows the coordinates without the map and address.
