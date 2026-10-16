@@ -42,6 +42,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,22 +80,24 @@ fun PhotoViewer(vm: GalleryViewModel, startIndex: Int, onBack: () -> Unit) {
     val current = list[pager.currentPage.coerceIn(0, list.lastIndex)]
     var zoomed by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
-    LaunchedEffect(pager.currentPage) { zoomed = false }
+    // Keyed on the photo, not the page: deleting a zoomed photo slides the next one into the same page index.
+    LaunchedEffect(current.id) { zoomed = false }
 
-    // Android hides photo GPS without this permission; ask once here so existing installs are covered too.
+    // Photos saved by this version carry their own coordinates. Only older photos need EXIF GPS, which Android
+    // hides without this permission, so ask at most once per viewer visit and only for such a photo.
     var permissionResults by remember { mutableIntStateOf(0) }
+    var askedPermission by rememberSaveable { mutableStateOf(false) }
     val permissionLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { permissionResults++ }
-    LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+    val location by produceState<Pair<Double, Double>?>(null, current.id, permissionResults) {
+        value = vm.location(current)
+        if (value == null && !askedPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_MEDIA_LOCATION) !=
             PackageManager.PERMISSION_GRANTED
         ) {
+            askedPermission = true
             permissionLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
         }
-    }
-    val location by produceState<Pair<Double, Double>?>(null, current.id, permissionResults) {
-        value = vm.location(current)
     }
 
     val deleteFailed = stringResource(R.string.delete_failed)

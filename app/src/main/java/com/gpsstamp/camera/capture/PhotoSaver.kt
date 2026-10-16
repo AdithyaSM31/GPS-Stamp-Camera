@@ -1,5 +1,6 @@
 package com.gpsstamp.camera.capture
 
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
@@ -12,6 +13,7 @@ import android.provider.MediaStore
 import androidx.camera.core.ImageProxy
 import androidx.exifinterface.media.ExifInterface
 import com.gpsstamp.camera.gallery.AlbumQuery
+import com.gpsstamp.camera.gallery.PhotoLocationStore
 import com.gpsstamp.camera.stamp.StampData
 import com.gpsstamp.camera.stamp.StampRenderer
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +26,7 @@ private const val JPEG_QUALITY = 92
 /** Burns the stamp into a captured frame and saves it to the gallery with EXIF GPS and time. */
 class PhotoSaver(context: Context) {
     private val resolver = context.applicationContext.contentResolver
+    private val locations = PhotoLocationStore(context)
 
     /** Always closes [image]. */
     suspend fun save(image: ImageProxy, data: StampData): Uri = withContext(Dispatchers.IO) {
@@ -38,6 +41,7 @@ class PhotoSaver(context: Context) {
                 writeJpeg(uri, photo)
                 writeExif(uri, data)
                 publish(uri)
+                locations.put(ContentUris.parseId(uri), data.lat, data.lon)
                 uri
             } catch (e: Exception) {
                 resolver.delete(uri, null, null)

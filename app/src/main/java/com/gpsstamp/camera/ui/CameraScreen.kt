@@ -120,7 +120,9 @@ fun CameraScreen(onOpenGallery: () -> Unit, vm: CameraViewModel = viewModel()) {
 
     // The UI is locked to portrait; track how the phone is really held so landscape shots save upright
     // and the preview stamp and icons turn to match.
-    var rotation by remember { mutableIntStateOf(Surface.ROTATION_0) }
+    // Starts from the capture rotation the camera already holds, so after returning from the gallery (or a
+    // configuration change) the preview and the saved photo agree even before the phone moves.
+    var rotation by remember { mutableIntStateOf(vm.camera.targetRotation) }
     DisposableEffect(Unit) {
         val listener = object : OrientationEventListener(context) {
             override fun onOrientationChanged(degrees: Int) {

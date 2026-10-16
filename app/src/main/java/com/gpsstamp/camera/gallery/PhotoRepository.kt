@@ -21,6 +21,7 @@ data class GalleryPhoto(val uri: Uri, val id: Long, val dateTakenMs: Long)
 class PhotoRepository(context: Context) {
     private val appContext = context.applicationContext
     private val resolver = appContext.contentResolver
+    private val locations = PhotoLocationStore(appContext)
 
     /** Newest first. */
     suspend fun list(): List<GalleryPhoto> = withContext(Dispatchers.IO) {
@@ -49,15 +50,21 @@ class PhotoRepository(context: Context) {
     }
 
     suspend fun delete(uri: Uri): Boolean = withContext(Dispatchers.IO) {
-        try {
+        val deleted = try {
             resolver.delete(uri, null, null) > 0
         } catch (e: SecurityException) {
             false
         }
+        if (deleted) locations.remove(ContentUris.parseId(uri))
+        deleted
     }
 
-    /** GPS from the photo's EXIF; null without the photo-location permission (Android 10+) or without GPS tags. */
+    /**
+     * Where the photo was taken: the copy saved alongside it, else (photos from older versions) EXIF GPS, which
+     * needs the photo-location permission on Android 10+. Null when neither is available.
+     */
     suspend fun location(uri: Uri): Pair<Double, Double>? = withContext(Dispatchers.IO) {
+        locations.get(ContentUris.parseId(uri))?.let { return@withContext it }
         try {
             val source = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val granted = ContextCompat.checkSelfPermission(appContext, Manifest.permission.ACCESS_MEDIA_LOCATION) ==

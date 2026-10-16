@@ -104,6 +104,8 @@ class CameraController(context: Context) {
         imageCapture.targetRotation = rotation
     }
 
+    val targetRotation: Int get() = imageCapture.targetRotation
+
     suspend fun takePicture(): ImageProxy = suspendCancellableCoroutine { cont ->
         imageCapture.takePicture(mainExecutor, object : ImageCapture.OnImageCapturedCallback() {
             override fun onCaptureSuccess(image: ImageProxy) {
