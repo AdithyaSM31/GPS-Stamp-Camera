@@ -14,6 +14,7 @@ import com.gpsstamp.camera.camera.CameraController
 import com.gpsstamp.camera.capture.CaptureRules
 import com.gpsstamp.camera.capture.CaptureStatus
 import com.gpsstamp.camera.capture.PhotoSaver
+import com.gpsstamp.camera.gallery.PhotoRepository
 import com.gpsstamp.camera.geo.AddressResolver
 import com.gpsstamp.camera.geo.Located
 import com.gpsstamp.camera.geo.ResolvedAddress
@@ -63,6 +64,7 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
     private val maps = OsmMapRenderer(app)
     private val saver = PhotoSaver(app)
     private val settings = SettingsStore(app)
+    private val photos = PhotoRepository(app)
 
     private val _ui = MutableStateFlow(CameraUiState())
     val ui: StateFlow<CameraUiState> = _ui.asStateFlow()
@@ -168,6 +170,14 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
             } finally {
                 _ui.update { it.copy(capturing = false) }
             }
+        }
+    }
+
+    /** Thumbnail shows the newest album photo, including ones from earlier sessions; null after deleting them all. */
+    fun refreshLastPhoto() {
+        viewModelScope.launch {
+            val newest = photos.list().firstOrNull()?.uri
+            _ui.update { it.copy(lastPhotoUri = newest) }
         }
     }
 

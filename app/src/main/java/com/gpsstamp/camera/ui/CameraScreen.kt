@@ -107,6 +107,7 @@ fun CameraScreen(onOpenGallery: () -> Unit, vm: CameraViewModel = viewModel()) {
     val snackbar = remember { SnackbarHostState() }
     var editingNote by rememberSaveable { mutableStateOf(false) }
 
+    LaunchedEffect(Unit) { vm.refreshLastPhoto() }
     LaunchedEffect(ui.lensFacing) { vm.camera.bind(lifecycleOwner, previewView, ui.lensFacing) }
     LaunchedEffect(ui.error) {
         ui.error?.let {

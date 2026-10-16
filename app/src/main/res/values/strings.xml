@@ -21,5 +21,17 @@
     <string name="cd_switch_camera">Switch camera</string>
     <string name="cd_edit_note">Edit note</string>
     <string name="cd_shutter">Take photo</string>
-    <string name="cd_last_photo">Open last photo</string>
+    <string name="cd_last_photo">Open gallery</string>
+    <string name="cd_back">Back</string>
+
+    <string name="no_photos">No photos yet</string>
+    <plurals name="photo_count">
+        <item quantity="one">%1$d photo</item>
+        <item quantity="other">%1$d photos</item>
+    </plurals>
+    <string name="share">Share</string>
+    <string name="open_in_maps">Open in Maps</string>
+    <string name="delete">Delete</string>
+    <string name="delete_confirm">Delete this photo?</string>
+    <string name="delete_failed">Couldn\'t delete photo</string>
 </resources>

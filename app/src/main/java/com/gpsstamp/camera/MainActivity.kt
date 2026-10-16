@@ -6,7 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import com.gpsstamp.camera.ui.CameraScreen
+import com.gpsstamp.camera.ui.AppNavigation
 import com.gpsstamp.camera.ui.PermissionGate
 
 class MainActivity : ComponentActivity() {
@@ -15,7 +15,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
-                PermissionGate { CameraScreen(onOpenGallery = {}) }
+                PermissionGate { AppNavigation() }
             }
         }
     }
