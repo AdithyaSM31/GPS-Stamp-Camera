@@ -11,6 +11,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import androidx.camera.core.ImageProxy
 import androidx.exifinterface.media.ExifInterface
+import com.gpsstamp.camera.gallery.AlbumQuery
 import com.gpsstamp.camera.stamp.StampData
 import com.gpsstamp.camera.stamp.StampRenderer
 import kotlinx.coroutines.Dispatchers
@@ -18,7 +19,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 
-private const val ALBUM = "GPS Stamp Camera"
 private const val JPEG_QUALITY = 92
 
 /** Burns the stamp into a captured frame and saves it to the gallery with EXIF GPS and time. */
@@ -66,10 +66,10 @@ class PhotoSaver(context: Context) {
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
             put(MediaStore.Images.Media.DATE_TAKEN, timeMs)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/$ALBUM")
+                put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/${AlbumQuery.ALBUM}")
                 put(MediaStore.Images.Media.IS_PENDING, 1)
             } else {
-                val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), ALBUM)
+                val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), AlbumQuery.ALBUM)
                 if (!dir.exists() && !dir.mkdirs()) throw IOException("Can't create $dir")
                 @Suppress("DEPRECATION")
                 put(MediaStore.Images.Media.DATA, File(dir, fileName).absolutePath)
