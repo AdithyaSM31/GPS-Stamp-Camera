@@ -8,3 +8,4 @@ captures/
 .superpowers/
 hs_err_pid*.log
 replay_pid*.log
+dist/
