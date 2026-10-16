@@ -15,6 +15,7 @@ import com.gpsstamp.camera.capture.CaptureRules
 import com.gpsstamp.camera.capture.CaptureStatus
 import com.gpsstamp.camera.capture.PhotoSaver
 import com.gpsstamp.camera.geo.AddressResolver
+import com.gpsstamp.camera.geo.Located
 import com.gpsstamp.camera.geo.ResolvedAddress
 import com.gpsstamp.camera.location.LocationRepository
 import com.gpsstamp.camera.location.LocationState
@@ -31,10 +32,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.ZoneId
 
 const val NOTE_MAX_LENGTH = 60
 private const val TICK_MS = 1_000L
+private const val LOOKUP_TIMEOUT_MS = 15_000L
 
 data class CameraUiState(
     val status: CaptureStatus = CaptureStatus.Waiting(null),
@@ -50,6 +53,9 @@ data class CameraUiState(
     val canCapture get() = CaptureRules.canCapture(status, capturing)
 }
 
+/** Address and map looked up together for one point; either may be null when offline. */
+private data class Place(val address: ResolvedAddress?, val map: Bitmap?)
+
 class CameraViewModel(app: Application) : AndroidViewModel(app) {
     val camera = CameraController(app)
     private val locations = LocationRepository(app)
@@ -62,10 +68,11 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
     val ui: StateFlow<CameraUiState> = _ui.asStateFlow()
 
     private var location: LocationState = LocationState.Searching(null)
-    private var address: ResolvedAddress? = null
-    private var map: Bitmap? = null
+    // Only stamped when the current fix is within 25 m of where it was looked up, so a photo can never pair
+    // one place's coordinates with another place's address or map.
+    private var place: Located<Place>? = null
     private var enrichJob: Job? = null
-    private var started = false
+    private var trackingJob: Job? = null
 
     init {
         viewModelScope.launch { _ui.update { it.copy(lensFacing = settings.lensFacing.first()) } }
@@ -77,18 +84,17 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Starts location updates; call once camera and location permissions are granted. */
-    fun start() {
-        if (started) return
-        started = true
-        viewModelScope.launch {
-            locations.states().collect { state ->
-                location = state
-                if (state is LocationState.Fix) enrich(state)
-                refresh()
+    /** Starts GPS while the screen is visible; requires camera and location permission. */
+    fun onStart() {
+        if (trackingJob?.isActive == true) return
+        trackingJob = viewModelScope.launch {
+            launch {
+                locations.states().collect { state ->
+                    location = state
+                    if (state is LocationState.Fix) enrich()
+                    refresh()
+                }
             }
-        }
-        viewModelScope.launch {
             while (isActive) {
                 refresh()
                 delay(TICK_MS)
@@ -96,24 +102,48 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Address and map lookups are slow and self-throttle at 25 m; skip new fixes while one is in flight. */
-    private fun enrich(fix: LocationState.Fix) {
+    /** Stops GPS in the background; the next fix after returning must be fresh before the shutter enables. */
+    fun onStop() {
+        trackingJob?.cancel()
+        trackingJob = null
+        location = LocationState.Searching(null)
+        refresh()
+    }
+
+    /**
+     * Looks up address and map for the latest fix, one lookup at a time. If the user moved more than 25 m while
+     * a lookup ran, it immediately looks up the newest fix instead of waiting for the next one.
+     */
+    private fun enrich() {
         if (enrichJob?.isActive == true) return
         enrichJob = viewModelScope.launch {
-            address = addresses.resolve(fix.lat, fix.lon)
-            map = maps.render(fix.lat, fix.lon)
-            refresh()
+            var target = location as? LocationState.Fix ?: return@launch
+            while (true) {
+                val address = withTimeoutOrNull(LOOKUP_TIMEOUT_MS) { addresses.resolve(target.lat, target.lon) }
+                val map = withTimeoutOrNull(LOOKUP_TIMEOUT_MS) { maps.render(target.lat, target.lon) }
+                val looked = Located(target.lat, target.lon, Place(address, map))
+                place = looked
+                refresh()
+                val latest = location as? LocationState.Fix ?: break
+                if (looked.valueNear(latest.lat, latest.lon) != null) break
+                target = latest
+            }
         }
     }
 
     private fun refresh() {
-        val status = CaptureRules.status(location, SystemClock.elapsedRealtime(), BuildConfig.ALLOW_MOCK_LOCATION)
+        val nowElapsed = SystemClock.elapsedRealtime()
+        val status = CaptureRules.status(location, nowElapsed, BuildConfig.ALLOW_MOCK_LOCATION)
         val fix = location as? LocationState.Fix
-        val now = System.currentTimeMillis()
         _ui.update { state ->
             val preview = fix?.let {
+                val near = place?.valueNear(it.lat, it.lon)
+                val now = it.timeAt(nowElapsed)
                 // Minute precision is all the stamp shows; keeps the preview bitmap from re-rendering every tick.
-                StampData(it.lat, it.lon, it.accuracyM, it.altitudeM, now - now % 60_000, ZoneId.systemDefault(), address, map, state.note)
+                StampData(
+                    it.lat, it.lon, it.accuracyM, it.altitudeM, now - now % 60_000, ZoneId.systemDefault(),
+                    near?.address, near?.map, state.note,
+                )
             }
             state.copy(status = status, preview = preview)
         }
@@ -122,7 +152,8 @@ class CameraViewModel(app: Application) : AndroidViewModel(app) {
     fun capture() {
         val state = _ui.value
         if (!state.canCapture) return
-        val snapshot = state.preview?.copy(timeMs = System.currentTimeMillis()) ?: return
+        val fix = location as? LocationState.Fix ?: return
+        val snapshot = state.preview?.copy(timeMs = fix.timeAt(SystemClock.elapsedRealtime())) ?: return
         _ui.update { it.copy(capturing = true) }
         viewModelScope.launch {
             try {

@@ -10,7 +10,10 @@ class CaptureRulesTest {
     private val now = 100_000L
 
     private fun fix(acc: Float = 5f, ageMs: Long = 1_000L, mock: Boolean = false) =
-        LocationState.Fix(12.843552, 80.154484, acc, 42.0, now - ageMs, mock)
+        LocationState.Fix(
+            lat = 12.843552, lon = 80.154484, accuracyM = acc, altitudeM = 42.0,
+            elapsedRealtimeMs = now - ageMs, timeMs = 0L, isMock = mock,
+        )
 
     private fun status(state: LocationState, allowMock: Boolean = false) = CaptureRules.status(state, now, allowMock)
 

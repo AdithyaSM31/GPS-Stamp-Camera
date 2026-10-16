@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import com.gpsstamp.camera.geo.PLACE_MATCH_DISTANCE_M
 import com.gpsstamp.camera.geo.haversineMeters
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -22,7 +23,6 @@ import java.util.concurrent.TimeUnit
 
 private const val ZOOM = 16
 private const val SIZE_PX = 384
-private const val REFRESH_DISTANCE_M = 25.0
 private const val USER_AGENT = "GPSStampCamera/1.0 (Android; com.gpsstamp.camera)"
 private const val ATTRIBUTION = "© OpenStreetMap"
 
@@ -39,7 +39,7 @@ class OsmMapRenderer(context: Context) {
     private var cached: Bitmap? = null
 
     suspend fun render(lat: Double, lon: Double): Bitmap? = mutex.withLock {
-        cached?.let { if (haversineMeters(cachedLat, cachedLon, lat, lon) <= REFRESH_DISTANCE_M) return it }
+        cached?.let { if (haversineMeters(cachedLat, cachedLon, lat, lon) <= PLACE_MATCH_DISTANCE_M) return it }
         val bitmap = withContext(Dispatchers.IO) {
             try {
                 draw(lat, lon)

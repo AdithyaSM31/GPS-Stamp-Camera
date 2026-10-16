@@ -54,23 +54,34 @@ class CameraController(context: Context) {
     private val _zoomRange = MutableStateFlow(1f..1f)
     val zoomRange: StateFlow<ClosedFloatingPointRange<Float>> = _zoomRange.asStateFlow()
 
-    private val _hasFrontCamera = MutableStateFlow(false)
-    val hasFrontCamera: StateFlow<Boolean> = _hasFrontCamera.asStateFlow()
+    /** True only when both a front and a back camera exist. */
+    private val _canSwitchLens = MutableStateFlow(false)
+    val canSwitchLens: StateFlow<Boolean> = _canSwitchLens.asStateFlow()
 
+    /** Binds the requested lens, falling back to whichever camera exists (some tablets have no back camera). */
     fun bind(owner: LifecycleOwner, previewView: PreviewView, lensFacing: Int) {
         providerFuture.addListener({
             val provider = providerFuture.get()
-            _hasFrontCamera.value = provider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)
-            val selector =
-                if (lensFacing == CameraSelector.LENS_FACING_FRONT && _hasFrontCamera.value) CameraSelector.DEFAULT_FRONT_CAMERA
-                else CameraSelector.DEFAULT_BACK_CAMERA
+            val hasFront = provider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)
+            val hasBack = provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)
+            _canSwitchLens.value = hasFront && hasBack
+            val selector = when {
+                lensFacing == CameraSelector.LENS_FACING_FRONT && hasFront -> CameraSelector.DEFAULT_FRONT_CAMERA
+                hasBack -> CameraSelector.DEFAULT_BACK_CAMERA
+                hasFront -> CameraSelector.DEFAULT_FRONT_CAMERA
+                else -> return@addListener // No camera: capture will fail with an error message instead of crashing.
+            }
 
             camera?.cameraInfo?.zoomState?.removeObservers(owner)
             provider.unbindAll()
             preview.surfaceProvider = previewView.surfaceProvider
-            val bound = provider.bindToLifecycle(owner, selector, preview, imageCapture)
-            bound.cameraInfo.zoomState.observe(owner) { _zoomRange.value = it.minZoomRatio..it.maxZoomRatio }
-            camera = bound
+            camera = try {
+                provider.bindToLifecycle(owner, selector, preview, imageCapture).also { bound ->
+                    bound.cameraInfo.zoomState.observe(owner) { _zoomRange.value = it.minZoomRatio..it.maxZoomRatio }
+                }
+            } catch (e: IllegalArgumentException) {
+                null
+            }
         }, mainExecutor)
     }
 

@@ -68,6 +68,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -84,10 +85,14 @@ private val Danger = Color(0xE6C62828)
 
 @Composable
 fun CameraScreen(vm: CameraViewModel = viewModel()) {
-    LaunchedEffect(Unit) { vm.start() }
+    // GPS runs only while the screen is visible: saves battery and forces a fresh fix after returning.
+    LifecycleStartEffect(vm) {
+        vm.onStart()
+        onStopOrDispose { vm.onStop() }
+    }
     val ui by vm.ui.collectAsStateWithLifecycle()
     val zoomRange by vm.camera.zoomRange.collectAsStateWithLifecycle()
-    val hasFrontCamera by vm.camera.hasFrontCamera.collectAsStateWithLifecycle()
+    val canSwitchLens by vm.camera.canSwitchLens.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val previewView = remember {
@@ -129,7 +134,7 @@ fun CameraScreen(vm: CameraViewModel = viewModel()) {
         ) {
             TopBar(
                 flashMode = ui.flashMode,
-                showSwitch = hasFrontCamera,
+                showSwitch = canSwitchLens,
                 onFlash = vm::cycleFlash,
                 onSwitch = vm::toggleLens,
                 onNote = { editingNote = true },

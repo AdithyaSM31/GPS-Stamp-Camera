@@ -13,8 +13,6 @@ import java.io.IOException
 import java.util.Locale
 import kotlin.coroutines.resume
 
-private const val REFRESH_DISTANCE_M = 25.0
-
 /** Turns coordinates into a stamp address with the platform Geocoder; null when offline or unavailable. */
 class AddressResolver(context: Context) {
     private val geocoder = Geocoder(context.applicationContext, Locale.getDefault())
@@ -24,7 +22,7 @@ class AddressResolver(context: Context) {
     private var cached: ResolvedAddress? = null
 
     suspend fun resolve(lat: Double, lon: Double): ResolvedAddress? = mutex.withLock {
-        cached?.let { if (haversineMeters(cachedLat, cachedLon, lat, lon) <= REFRESH_DISTANCE_M) return it }
+        cached?.let { if (haversineMeters(cachedLat, cachedLon, lat, lon) <= PLACE_MATCH_DISTANCE_M) return it }
         if (!Geocoder.isPresent()) return null
         val resolved = lookup(lat, lon)?.toResolved() ?: return null
         cachedLat = lat
